@@ -7,6 +7,8 @@ A browser extension built with [WXT](https://wxt.dev) + React + TypeScript + Tai
 ## Features
 
 - DOM ad detection (class names / IDs / iframe src / fixed overlay banners)
+- Site-specific rules for X (x.com/twitter.com): promoted tweets, trends and
+  promoted "who to follow" accounts
 - `MutationObserver` for dynamically injected ads (SPA friendly)
 - Global on/off switch, hide vs. remove mode
 - Site allowlist (applied to both DOM cleanup and network blocking)

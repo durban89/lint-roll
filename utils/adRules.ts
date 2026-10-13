@@ -37,6 +37,7 @@ export const AD_DOMAINS = [
   'adcolony.com',
   'scorecardresearch.com',
   'adform.net',
+  'ads-twitter.com',
 ];
 
 /** Rule IDs used by the dynamic ad-blocking rules (1-based). */
