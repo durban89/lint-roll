@@ -1,4 +1,31 @@
-import { blockedCount, incrementBlocked } from '@/utils/settings';
+import { buildDynamicAdRules, dynamicAdRuleIds } from '@/utils/adRules';
+import {
+  allowlist,
+  blockedCount,
+  enabled,
+  incrementBlocked,
+} from '@/utils/settings';
+
+/**
+ * Register or remove the ad-blocking rules as dynamic declarativeNetRequest
+ * rules, honoring the global switch and site allowlist. These live in the
+ * browser profile, so unpacked loads never write to the extension directory's
+ * reserved `_metadata` folder.
+ */
+async function syncDynamicRules(): Promise<void> {
+  try {
+    const [active, domains] = await Promise.all([
+      enabled.getValue(),
+      allowlist.getValue(),
+    ]);
+    await browser.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds: dynamicAdRuleIds,
+      addRules: (active ?? true) ? buildDynamicAdRules(domains ?? []) : [],
+    });
+  } catch (error) {
+    console.error('[LintRoll] Failed to sync dynamic rules', error);
+  }
+}
 
 export default defineBackground(() => {
   blockedCount.watch((count) => {
@@ -24,4 +51,22 @@ export default defineBackground(() => {
       void incrementBlocked(msg.count);
     }
   });
+
+  enabled.watch(() => {
+    void syncDynamicRules();
+  });
+
+  allowlist.watch(() => {
+    void syncDynamicRules();
+  });
+
+  browser.runtime.onInstalled.addListener(() => {
+    void syncDynamicRules();
+  });
+
+  browser.runtime.onStartup.addListener(() => {
+    void syncDynamicRules();
+  });
+
+  void syncDynamicRules();
 });

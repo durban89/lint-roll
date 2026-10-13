@@ -2,14 +2,14 @@
 
 Sweep away page ads like a lint roller removes lint from fabric.
 
-A browser extension built with [WXT](https://wxt.dev) + React + TypeScript + Tailwind CSS v4 that detects and removes ad elements on pages and blocks common ad network requests via `declarativeNetRequest`.
+A browser extension built with [WXT](https://wxt.dev) + React + TypeScript + Tailwind CSS v4 that detects and removes ad elements on pages and blocks common ad network requests via `declarativeNetRequest` dynamic rules.
 
 ## Features
 
 - DOM ad detection (class names / IDs / iframe src / fixed overlay banners)
 - `MutationObserver` for dynamically injected ads (SPA friendly)
 - Global on/off switch, hide vs. remove mode
-- Site allowlist
+- Site allowlist (applied to both DOM cleanup and network blocking)
 - Block statistics and toolbar badge
 - Stack: MV3, WXT 0.21, React 19, Vite 8, Tailwind v4
 
@@ -45,16 +45,20 @@ Output goes to `.output/`; the unpacked extension lives in `.output/chrome-mv3/`
 entrypoints/       # entrypoints (background / content / popup / options)
 components/        # React components
 hooks/             # React hooks
-utils/             # storage and settings
+utils/             # storage, settings and ad-block rules
 public/icon/       # icons
-public/rules/      # declarativeNetRequest rules
 ```
+
+Network blocking rules are registered at runtime via
+`declarativeNetRequest.updateDynamicRules` (see `utils/adRules.ts` and
+`entrypoints/background.ts`). Dynamic rules are stored in the browser profile
+rather than the extension directory, so they work with unpacked dev loads.
 
 ## Notes
 
 This project is for educational/demo purposes. The ad detection rules
-(selectors in `content.ts` and `public/rules/ads.json`) cover common cases and
-can be extended as needed.
+(DOM selectors in `content.ts`, network domains in `utils/adRules.ts`) cover
+common cases and can be extended as needed.
 
 ## License
 

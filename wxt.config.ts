@@ -12,14 +12,5 @@ export default defineConfig({
     description: 'Detect and remove page ads for a cleaner browsing experience.',
     permissions: ['storage', 'declarativeNetRequest', 'activeTab', 'scripting'],
     host_permissions: ['<all_urls>'],
-    declarative_net_request: {
-      rule_resources: [
-        {
-          id: 'ads',
-          enabled: true,
-          path: 'rules/ads.json',
-        },
-      ],
-    },
   },
 });
