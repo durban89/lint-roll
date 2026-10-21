@@ -7,12 +7,14 @@ A browser extension built with [WXT](https://wxt.dev) + React + TypeScript + Tai
 ## Features
 
 - DOM ad detection (class names / IDs / iframe src / fixed overlay banners)
-- Site-specific rules for X (x.com/twitter.com): promoted tweets, trends and
-  promoted "who to follow" accounts
+- Per-site rules (`utils/siteRules.ts`) for publishers with stable ad slot ids;
+  currently covers X (x.com/twitter.com) and wenxuecity.com
+- Ad-block **detection** protection: probe elements are never hidden, so sites
+  stop showing "please disable your ad blocker" overlays
 - `MutationObserver` for dynamically injected ads (SPA friendly)
 - Global on/off switch, hide vs. remove mode
 - Site allowlist (applied to both DOM cleanup and network blocking)
-- Block statistics and toolbar badge
+- Per-site block statistics, toolbar badge
 - Stack: MV3, WXT 0.21, React 19, Vite 8, Tailwind v4
 
 ## Requirements
@@ -41,13 +43,25 @@ pnpm zip          # package for release
 Output goes to `.output/`; the unpacked extension lives in `.output/chrome-mv3/`
 (load it via `chrome://extensions` → enable Developer mode → Load unpacked).
 
+## Tests
+
+```sh
+pnpm test         # bundles and runs the rule invariants
+pnpm compile      # tsc --noEmit
+```
+
+`tests/rules.test.ts` guards the invariants that are easy to break by accident:
+rule ids stay unique, the allowlist stays normalized, and the hosts used by
+ad-block detection are never added to the block list.
+
 ## Project Structure
 
 ```plaintext
 entrypoints/       # entrypoints (background / content / popup / options)
 components/        # React components
 hooks/             # React hooks
-utils/             # storage, settings and ad-block rules
+utils/             # storage, settings, filters and ad-block rules
+tests/             # rule invariant tests
 public/icon/       # icons
 ```
 
@@ -56,11 +70,55 @@ Network blocking rules are registered at runtime via
 `entrypoints/background.ts`). Dynamic rules are stored in the browser profile
 rather than the extension directory, so they work with unpacked dev loads.
 
+## How ads are removed
+
+Filtering happens in two independent layers:
+
+| Layer | File | What it does |
+| --- | --- | --- |
+| Cosmetic | `entrypoints/content.ts` | Hides/removes ad elements in the DOM, removes "disable your blocker" overlays |
+| Network | `utils/adRules.ts` | Blocks requests to ad networks and bidders via dynamic DNR rules |
+
+`utils/adFilters.ts` holds the site-independent selectors, `utils/siteRules.ts`
+holds the per-site ones. A site rule wins over the generic heuristics, and
+`exclude` selectors protect elements that look like ads but are not.
+
+### Ad-block detection protection
+
+Many publishers run an "are you blocking ads?" check. The check injects a
+throwaway element and verifies that it is still rendered; if the element is
+hidden or removed, the site concludes a blocker is active and covers the page
+with a full-screen modal.
+
+Two such checks are known and are explicitly left alone by
+`isDetectionProbe()` in `utils/adFilters.ts`:
+
+- **FreeStar / pub.network** –
+  `<div class="ad banner-ad ..." data-freestar-ad="0.42">0.17</div>`. The
+  detector additionally probes `https://a.pub.network/core/imgs/1.png` and
+  `https://a.pub.network/core/prebid-universal-creative.js` and verifies that
+  the response was not redirected.
+- **moa (srvb1.com)** – `<div class="adsbygoogle google-ads" data-moa_id="...">`
+  parked off-screen at 1x1. A zero-sized probe is reported as "blocker active".
+
+Consequences for the rule set:
+
+- `a.pub.network` and `googletagservices.com` are **never** blocked, even
+  though they belong to the ad stack.
+- The generic `adsbygoogle` class matcher was dropped; only the real AdSense
+  unit (`ins.adsbygoogle`) is matched.
+- `srvb1.com` *is* blocked: the moa tag is mostly a detector, so removing it
+  removes the detection instead of triggering it.
+- Ads are hidden with inline styles instead of injected CSS rules, because a
+  `!important` stylesheet rule would hit the probe elements as well.
+
 ## Notes
 
 This project is for educational/demo purposes. The ad detection rules
-(DOM selectors in `content.ts`, network domains in `utils/adRules.ts`) cover
-common cases and can be extended as needed.
+(DOM selectors in `utils/adFilters.ts` and `utils/siteRules.ts`, network
+domains in `utils/adRules.ts`) cover common cases and can be extended as
+needed.
+
 
 ## License
 

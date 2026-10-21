@@ -1,53 +1,13 @@
+import {
+  AD_URL_PATTERNS,
+  GENERIC_AD_SELECTORS,
+  OVERLAY_SELECTORS,
+  containsDetectionProbe,
+  isDetectionProbe,
+  looksLikeAd,
+} from '@/utils/adFilters';
 import { allowlist, enabled, removeElements } from '@/utils/settings';
-
-const AD_SELECTORS = [
-  "[id^='ad_']",
-  "[id^='ad-']",
-  "[id*='-ad-']",
-  "[id$='-ad']",
-  "[id='ads']",
-  "[class^='ad_']",
-  "[class^='ad-']",
-  "[class*=' ad-']",
-  "[class$='-ad']",
-  "[class*='advert']",
-  "[class*='adsbygoogle']",
-  "[class*='sponsored']",
-  "[class*='banner-ad']",
-  "[class*='adsense']",
-  "[id*='google_ads']",
-  "[id*='googleads']",
-  "[aria-label='Advertisement' i]",
-  "[aria-label='advertisement' i]",
-  "iframe[src*='doubleclick.net']",
-  "iframe[src*='googlesyndication']",
-  "iframe[src*='googleadservices']",
-  "iframe[id^='google_ads_iframe']",
-  "iframe[src*='adservice']",
-  "iframe[src*='/ads/']",
-  'ins.adsbygoogle',
-  'amp-ad',
-  'div[data-ad-slot]',
-  'div[data-ad-client]',
-  'div[data-google-query-id]',
-].join(',');
-
-const AD_URL_PATTERNS = [
-  'doubleclick.net',
-  'googlesyndication.com',
-  'googleadservices.com',
-  'adservice.google.com',
-  'ads.yahoo.com',
-  'adnxs.com',
-  'criteo.com',
-  'taboola.com',
-  'outbrain.com',
-  'pubmatic.com',
-  'rubiconproject.com',
-  'openx.net',
-  'casalemedia.com',
-  'amazon-adsystem.com',
-];
+import { findSiteRule, hostMatches, type SiteRule } from '@/utils/siteRules';
 
 const MIN_BANNER_HEIGHT = 60;
 const MIN_BANNER_WIDTH = 200;
@@ -108,8 +68,25 @@ export default defineContentScript({
       enabled: await enabled.getValue(),
       remove: await removeElements.getValue(),
       allowlist: await allowlist.getValue(),
-      count: 0,
     };
+
+    /** Elements already processed, so they are not counted twice. */
+    const counted = new WeakSet<Element>();
+    /** Site rule that applies to this frame. */
+    let siteRule: SiteRule | undefined = findSiteRule(location.hostname);
+    /** Selector list for this frame, rebuilt when the site rule changes. */
+    let selectors = '';
+    let sitePatterns = AD_URL_PATTERNS;
+
+    function refreshSiteRule(): void {
+      siteRule = findSiteRule(location.hostname);
+      selectors = [GENERIC_AD_SELECTORS, ...(siteRule?.selectors ?? [])].join(
+        ',',
+      );
+      sitePatterns = [...AD_URL_PATTERNS, ...(siteRule?.urlPatterns ?? [])];
+    }
+
+    refreshSiteRule();
 
     enabled.watch((value) => {
       state.enabled = value ?? true;
@@ -117,62 +94,72 @@ export default defineContentScript({
     });
     removeElements.watch((value) => {
       state.remove = value ?? true;
+      // Re-run so elements that were only hidden get removed as well.
+      if (state.enabled) scan(document);
     });
     allowlist.watch((value) => {
       state.allowlist = value ?? [];
     });
 
     const isAllowed = () =>
-      state.allowlist.some((domain) => location.hostname.endsWith(domain));
+      state.allowlist.some((domain) => hostMatches(location.hostname, domain));
 
     function hideElement(el: Element) {
       if (state.remove) {
         el.remove();
       } else {
-        (el as HTMLElement).style.setProperty('display', 'none', 'important');
-        (el as HTMLElement).style.setProperty(
-          'visibility',
-          'hidden',
-          'important',
-        );
+        const node = el as HTMLElement;
+        node.style.setProperty('display', 'none', 'important');
+        node.style.setProperty('visibility', 'hidden', 'important');
       }
     }
 
     function isAdByUrl(el: Element) {
       const url = el.getAttribute('src') || el.getAttribute('data-src') || '';
       if (!url) return false;
-      return AD_URL_PATTERNS.some((pattern) => url.includes(pattern));
+      return sitePatterns.some((pattern) => url.includes(pattern));
     }
 
     function isLargeFixedBanner(el: Element) {
       if (el.tagName === 'IFRAME' || el.tagName === 'INS') return false;
+      // Hiding a container that holds a detection probe would trip it.
+      if (containsDetectionProbe(el)) return false;
       const style = window.getComputedStyle(el);
       if (style.position !== 'fixed' && style.position !== 'sticky') return false;
       const rect = el.getBoundingClientRect();
       if (rect.height < MIN_BANNER_HEIGHT || rect.width < MIN_BANNER_WIDTH) {
         return false;
       }
-      return (el.textContent || '').trim().length < 200;
+      if ((el.textContent || '').trim().length >= 200) return false;
+      // Only treat it as an ad when it actually carries ad content, so
+      // cookie banners and other sticky chrome survive.
+      return looksLikeAd(el);
     }
 
     function report(count: number) {
       if (count <= 0) return;
-      state.count += count;
       browser.runtime
-        .sendMessage({ type: 'AD_BLOCKED', count })
+        .sendMessage({
+          type: 'AD_BLOCKED',
+          count,
+          host: location.hostname,
+        })
         .catch(() => {});
-    }
-
-    function hideXElement(el: Element) {
-      // X's timeline is a virtualized React list; detaching nodes can blank
-      // the feed, so X ads are always hidden rather than removed.
-      const node = el as HTMLElement;
-      node.style.setProperty('display', 'none', 'important');
     }
 
     function cleanXAds(root: ParentNode): number {
       if (!isXHost()) return 0;
       let removed = 0;
+
+      const hide = (el: Element) => {
+        // X's timeline is a virtualized React list; detaching nodes can blank
+        // the feed, so X ads are always hidden rather than removed.
+        const node = el as HTMLElement;
+        node.style.setProperty('display', 'none', 'important');
+        if (counted.has(el)) return;
+        counted.add(el);
+        removed++;
+      };
 
       // Promoted tweets/trends/video units are wrapped in `placementTracking`;
       // collapse the whole timeline cell instead of the inner wrapper.
@@ -181,58 +168,74 @@ export default defineContentScript({
           el.closest(
             '[data-testid="cellInnerDiv"], article[data-testid="tweet"]',
           ) ?? el;
-        hideXElement(cell);
-        removed++;
+        hide(cell);
       });
 
       // Search/other placements mark ads with a "Promoted" label.
       queryAll(root, 'article[data-testid="tweet"]').forEach((el) => {
         if (el.querySelector('[data-testid="placementTracking"]')) return;
-        if (hasPromotedLabel(el)) {
-          hideXElement(el);
-          removed++;
-        }
+        if (hasPromotedLabel(el)) hide(el);
       });
 
       // Promoted trends and promoted "who to follow" accounts.
       queryAll(root, '[data-testid="trend"], [data-testid="UserCell"]').forEach(
         (el) => {
-          if (hasPromotedLabel(el)) {
-            hideXElement(el);
-            removed++;
-          }
+          if (hasPromotedLabel(el)) hide(el);
         },
       );
 
       return removed;
     }
 
+    function isExcluded(el: Element): boolean {
+      const exclude = siteRule?.exclude;
+      if (!exclude || exclude.length === 0) return false;
+      return exclude.some((selector) => el.matches(selector));
+    }
+
     function scan(root: ParentNode) {
       if (!state.enabled || isAllowed()) return;
       let removed = 0;
 
-      root.querySelectorAll(AD_SELECTORS).forEach((el) => {
+      /**
+       * Hide an element and count it once. Hiding is idempotent, so a site
+       * that re-inserts a previously removed ad is handled again - but the
+       * statistic is not inflated.
+       */
+      function handle(el: Element) {
         hideElement(el);
+        if (counted.has(el)) return;
+        counted.add(el);
         removed++;
-      });
+      }
+
+      for (const el of queryAll(root, selectors)) {
+        // Detection probes must stay visible, otherwise the site believes an
+        // ad blocker is active and covers the page with a modal.
+        if (isDetectionProbe(el)) continue;
+        if (isExcluded(el)) continue;
+        handle(el);
+      }
 
       removed += cleanXAds(root);
 
-      root.querySelectorAll('iframe, ins, object, embed').forEach((el) => {
-        if (isAdByUrl(el)) {
-          hideElement(el);
-          removed++;
-        }
-      });
+      for (const el of queryAll(root, 'iframe, ins, object, embed')) {
+        if (isDetectionProbe(el)) continue;
+        if (!isAdByUrl(el)) continue;
+        handle(el);
+      }
 
-      if (root === document) {
+      // "Please disable your ad blocker" modals.
+      for (const el of queryAll(root, OVERLAY_SELECTORS)) {
+        handle(el);
+      }
+
+      if (root === document || root.parentElement === document.body) {
         document
           .querySelectorAll('body > div, body > aside, body > section')
           .forEach((el) => {
-            if (isLargeFixedBanner(el)) {
-              hideElement(el);
-              removed++;
-            }
+            if (!isLargeFixedBanner(el)) return;
+            handle(el);
           });
       }
 
@@ -241,11 +244,16 @@ export default defineContentScript({
 
     function startObserver() {
       const observer = new MutationObserver((mutations) => {
+        // A container and its children are often added in the same batch, so
+        // scanning the outermost node covers all of them.
+        const roots: Element[] = [];
         for (const mutation of mutations) {
           for (const node of mutation.addedNodes) {
-            if (node.nodeType === Node.ELEMENT_NODE) {
-              scan(node as Element);
-            }
+            if (node.nodeType !== Node.ELEMENT_NODE) continue;
+            const el = node as Element;
+            if (roots.some((root) => root.contains(el))) continue;
+            roots.push(el);
+            scan(el);
           }
         }
       });
@@ -258,11 +266,14 @@ export default defineContentScript({
 
     if (state.enabled) {
       scan(document);
-      startObserver();
     }
+    // The observer always runs; `scan` bails out while blocking is off.
+    startObserver();
 
     browser.runtime.onMessage.addListener((message: unknown) => {
-      if ((message as { type?: string })?.type === 'SCAN_NOW') {
+      const type = (message as { type?: string })?.type;
+      if (type === 'SCAN_NOW') {
+        refreshSiteRule();
         scan(document);
       }
     });

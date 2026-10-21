@@ -3,11 +3,13 @@ import { Toggle } from '@/components/Toggle';
 import { useStorageItem } from '@/hooks/useStorageItem';
 import {
   allowlist,
+  blockedBySite,
   blockedCount,
   enabled,
   removeElements,
   resetStats,
 } from '@/utils/settings';
+import { findSiteRule, hostMatches } from '@/utils/siteRules';
 
 function getHostname(url?: string): string {
   try {
@@ -21,6 +23,7 @@ function App() {
   const [isEnabled, setIsEnabled] = useStorageItem(enabled);
   const [removes, setRemoves] = useStorageItem(removeElements);
   const [count] = useStorageItem(blockedCount);
+  const [perSite] = useStorageItem(blockedBySite);
   const [list, setList] = useStorageItem(allowlist);
 
   const [tabId, setTabId] = useState<number | undefined>();
@@ -36,8 +39,11 @@ function App() {
   }, []);
 
   const isAllowed = host
-    ? (list ?? []).some((domain) => host.endsWith(domain))
+    ? (list ?? []).some((domain) => hostMatches(host, domain))
     : false;
+
+  const siteRule = host ? findSiteRule(host) : undefined;
+  const siteCount = host ? (perSite ?? {})[host] ?? 0 : 0;
 
   async function toggleAllow(checked: boolean) {
     if (!host) return;
@@ -76,6 +82,12 @@ function App() {
       <section className="rounded-xl border border-slate-800 bg-slate-900/60 px-4 py-3">
         <p className="text-[11px] text-slate-400">Blocked elements</p>
         <p className="text-3xl font-bold tabular-nums">{count ?? 0}</p>
+        {host && (
+          <p className="mt-1 truncate text-[11px] text-slate-500">
+            {siteCount} on {host}
+            {siteRule ? ' (site rule active)' : ''}
+          </p>
+        )}
       </section>
 
       <section className="flex flex-col gap-2">

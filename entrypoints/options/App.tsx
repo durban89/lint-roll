@@ -3,17 +3,20 @@ import { Toggle } from '@/components/Toggle';
 import { useStorageItem } from '@/hooks/useStorageItem';
 import {
   allowlist,
+  blockedBySite,
   blockedCount,
   enabled,
   removeElements,
   resetStats,
 } from '@/utils/settings';
+import { SITE_RULES } from '@/utils/siteRules';
 
 function App() {
   const [isEnabled, setIsEnabled] = useStorageItem(enabled);
   const [removes, setRemoves] = useStorageItem(removeElements);
   const [list, setList] = useStorageItem(allowlist);
   const [count] = useStorageItem(blockedCount);
+  const [perSite] = useStorageItem(blockedBySite);
   const [draft, setDraft] = useState('');
 
   function normalize(value: string): string {
@@ -37,6 +40,10 @@ function App() {
   async function removeDomain(domain: string) {
     await setList((list ?? []).filter((item) => item !== domain));
   }
+
+  const topSites = Object.entries(perSite ?? {})
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 8);
 
   return (
     <div className="min-h-screen bg-slate-950 px-6 py-10 text-slate-100 antialiased">
@@ -79,9 +86,13 @@ function App() {
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
-          <h2 className="mb-4 text-sm font-semibold text-slate-300">
+          <h2 className="mb-1 text-sm font-semibold text-slate-300">
             Site Allowlist
           </h2>
+          <p className="mb-4 text-xs text-slate-500">
+            Allowlisted sites are skipped by both the DOM cleanup and the
+            network blocking.
+          </p>
           <div className="flex gap-2">
             <input
               value={draft}
@@ -124,6 +135,28 @@ function App() {
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <h2 className="mb-4 text-sm font-semibold text-slate-300">
+            Known Site Rules
+          </h2>
+          <ul className="flex flex-col gap-2">
+            {SITE_RULES.map((rule) => (
+              <li
+                key={rule.hosts.join(',')}
+                className="rounded-lg border border-slate-800 bg-slate-950 px-3 py-2"
+              >
+                <p className="text-sm">{rule.hosts.join(', ')}</p>
+                <p className="text-xs text-slate-500">
+                  {rule.selectors.length} selectors
+                  {rule.blockDomains?.length
+                    ? ` + ${rule.blockDomains.join(', ')}`
+                    : ''}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
           <h2 className="mb-4 text-sm font-semibold text-slate-300">Statistics</h2>
           <div className="flex items-center justify-between">
             <p className="text-sm text-slate-400">
@@ -138,6 +171,20 @@ function App() {
               Reset stats
             </button>
           </div>
+
+          {topSites.length > 0 && (
+            <ul className="mt-4 flex flex-col gap-1">
+              {topSites.map(([host, value]) => (
+                <li
+                  key={host}
+                  className="flex items-center justify-between text-xs text-slate-400"
+                >
+                  <span className="truncate">{host}</span>
+                  <span className="tabular-nums text-slate-200">{value}</span>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
       </div>
     </div>

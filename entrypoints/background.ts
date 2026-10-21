@@ -46,9 +46,9 @@ export default defineBackground(() => {
     .catch(() => {});
 
   browser.runtime.onMessage.addListener((message: unknown) => {
-    const msg = message as { type?: string; count?: number };
+    const msg = message as { type?: string; count?: number; host?: string };
     if (msg?.type === 'AD_BLOCKED' && typeof msg.count === 'number') {
-      void incrementBlocked(msg.count);
+      void incrementBlocked(msg.count, msg.host);
     }
   });
 
