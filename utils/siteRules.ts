@@ -72,6 +72,21 @@ export const SITE_RULES: SiteRule[] = [
   },
 ];
 
+/** Normalize user input (URL or host) into a bare lowercase host name. */
+export function normalizeHost(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/^[a-z]+:\/\//, '')
+    .replace(/^www\./, '')
+    .replace(/\/.*$/, '');
+}
+
+/** True when `hostname` is covered by any host in `hosts`. */
+export function isHostListed(hostname: string, hosts: string[]): boolean {
+  return hosts.some((host) => hostMatches(hostname, host));
+}
+
 /** True when `hostname` is covered by `host` (host itself or a subdomain). */
 export function hostMatches(hostname: string, host: string): boolean {
   const name = hostname.toLowerCase();

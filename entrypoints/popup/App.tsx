@@ -6,10 +6,12 @@ import {
   blockedBySite,
   blockedCount,
   enabled,
+  managedOnly,
+  managedSites,
   removeElements,
   resetStats,
 } from '@/utils/settings';
-import { findSiteRule, hostMatches } from '@/utils/siteRules';
+import { findSiteRule, hostMatches, normalizeHost } from '@/utils/siteRules';
 
 function getHostname(url?: string): string {
   try {
@@ -25,6 +27,8 @@ function App() {
   const [count] = useStorageItem(blockedCount);
   const [perSite] = useStorageItem(blockedBySite);
   const [list, setList] = useStorageItem(allowlist);
+  const [onlyManaged] = useStorageItem(managedOnly);
+  const [sites, setSites] = useStorageItem(managedSites);
 
   const [tabId, setTabId] = useState<number | undefined>();
   const [host, setHost] = useState('');
@@ -42,6 +46,11 @@ function App() {
     ? (list ?? []).some((domain) => hostMatches(host, domain))
     : false;
 
+  const managedHost = host ? normalizeHost(host) : '';
+  const isManaged = managedHost
+    ? (sites ?? []).some((site) => hostMatches(host, site))
+    : false;
+
   const siteRule = host ? findSiteRule(host) : undefined;
   const siteCount = host ? (perSite ?? {})[host] ?? 0 : 0;
 
@@ -50,6 +59,13 @@ function App() {
     const current = list ?? [];
     const without = current.filter((domain) => domain !== host);
     await setList(checked ? [...without, host] : without);
+  }
+
+  async function toggleManaged(checked: boolean) {
+    if (!managedHost) return;
+    const current = sites ?? [];
+    const without = current.filter((site) => site !== managedHost);
+    await setSites(checked ? [...without, managedHost] : without);
   }
 
   async function rescan() {
@@ -69,7 +85,9 @@ function App() {
           <img src="/icon/48.png" alt="" className="h-7 w-7" />
           <div className="leading-tight">
             <h1 className="text-sm font-semibold">LintRoll</h1>
-            <p className="text-[11px] text-slate-400">Sweep ads away</p>
+            <p className="text-[11px] text-slate-400">
+              Sweep ads away · v{browser.runtime.getManifest().version}
+            </p>
           </div>
         </div>
         <Toggle
@@ -97,6 +115,21 @@ function App() {
             aria-label="Remove elements"
             checked={removes ?? false}
             onChange={(value) => void setRemoves(value)}
+          />
+        </label>
+        <label className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-xs">
+          <span>
+            Manage this site
+            <span className="block text-[10px] text-slate-500">
+              {managedHost || 'n/a'}
+              {onlyManaged === false ? ' (all sites active)' : ''}
+            </span>
+          </span>
+          <Toggle
+            aria-label="Manage this site"
+            checked={isManaged}
+            disabled={!managedHost}
+            onChange={(value) => void toggleManaged(value)}
           />
         </label>
         <label className="flex cursor-pointer items-center justify-between rounded-lg border border-slate-800 bg-slate-900/40 px-3 py-2 text-xs">

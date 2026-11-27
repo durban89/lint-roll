@@ -6,8 +6,19 @@ import {
   isDetectionProbe,
   looksLikeAd,
 } from '@/utils/adFilters';
-import { allowlist, enabled, removeElements } from '@/utils/settings';
-import { findSiteRule, hostMatches, type SiteRule } from '@/utils/siteRules';
+import {
+  allowlist,
+  enabled,
+  managedOnly,
+  managedSites,
+  removeElements,
+} from '@/utils/settings';
+import {
+  findSiteRule,
+  hostMatches,
+  isHostListed,
+  type SiteRule,
+} from '@/utils/siteRules';
 
 const MIN_BANNER_HEIGHT = 60;
 const MIN_BANNER_WIDTH = 200;
@@ -68,6 +79,8 @@ export default defineContentScript({
       enabled: await enabled.getValue(),
       remove: await removeElements.getValue(),
       allowlist: await allowlist.getValue(),
+      managedOnly: await managedOnly.getValue(),
+      managedSites: await managedSites.getValue(),
     };
 
     /** Elements already processed, so they are not counted twice. */
@@ -100,9 +113,22 @@ export default defineContentScript({
     allowlist.watch((value) => {
       state.allowlist = value ?? [];
     });
+    managedOnly.watch((value) => {
+      state.managedOnly = value ?? true;
+      if (state.enabled) scan(document);
+    });
+    managedSites.watch((value) => {
+      state.managedSites = value ?? [];
+      if (state.enabled) scan(document);
+    });
 
     const isAllowed = () =>
       state.allowlist.some((domain) => hostMatches(location.hostname, domain));
+
+    /** Sites outside the managed list are left completely untouched. */
+    const isManaged = () =>
+      !state.managedOnly ||
+      isHostListed(location.hostname, state.managedSites ?? []);
 
     function hideElement(el: Element) {
       if (state.remove) {
@@ -194,7 +220,7 @@ export default defineContentScript({
     }
 
     function scan(root: ParentNode) {
-      if (!state.enabled || isAllowed()) return;
+      if (!state.enabled || !isManaged() || isAllowed()) return;
       let removed = 0;
 
       /**

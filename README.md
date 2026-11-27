@@ -13,6 +13,8 @@ A browser extension built with [WXT](https://wxt.dev) + React + TypeScript + Tai
   stop showing "please disable your ad blocker" overlays
 - `MutationObserver` for dynamically injected ads (SPA friendly)
 - Global on/off switch, hide vs. remove mode
+- Managed sites: optional opt-in list, so the extension only runs on the sites
+  you add (subdomains included) and leaves every other site untouched
 - Site allowlist (applied to both DOM cleanup and network blocking)
 - Per-site block statistics, toolbar badge
 - Stack: MV3, WXT 0.21, React 19, Vite 8, Tailwind v4
@@ -78,6 +80,16 @@ Filtering happens in two independent layers:
 | --- | --- | --- |
 | Cosmetic | `entrypoints/content.ts` | Hides/removes ad elements in the DOM, removes "disable your blocker" overlays |
 | Network | `utils/adRules.ts` | Blocks requests to ad networks and bidders via dynamic DNR rules |
+
+### Managed sites
+
+By default the extension only runs on the sites listed under **Managed Sites**
+in the options page (or via the popup's "Manage this site" toggle). Adding
+`baidu.com` covers `www.baidu.com`, `m.baidu.com` and every other subdomain.
+Sites that are not on the list are skipped by both layers: the content script
+stops scanning and the dynamic network rules are limited to managed initiators.
+Turn "Only run on managed sites" off in the options to go back to blocking
+across the whole web.
 
 `utils/adFilters.ts` holds the site-independent selectors, `utils/siteRules.ts`
 holds the per-site ones. A site rule wins over the generic heuristics, and

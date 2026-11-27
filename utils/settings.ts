@@ -27,6 +27,17 @@ export const allowlist = storage.defineItem<string[]>('local:allowlist', {
   fallback: [],
 });
 
+/** Managed sites: domains where the extension is allowed to run */
+export const managedSites = storage.defineItem<string[]>(
+  'local:managedSites',
+  { fallback: [] },
+);
+
+/** Only run on managed sites (opt-in mode) */
+export const managedOnly = storage.defineItem<boolean>('local:managedOnly', {
+  fallback: true,
+});
+
 /** Maximum number of hostnames kept in the per-site statistics. */
 const MAX_TRACKED_SITES = 200;
 

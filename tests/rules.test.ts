@@ -4,7 +4,7 @@ import {
   buildDynamicAdRules,
   dynamicAdRuleIds,
 } from '@/utils/adRules';
-import { SITE_RULES } from '@/utils/siteRules';
+import { SITE_RULES, normalizeHost } from '@/utils/siteRules';
 
 let failures = 0;
 
@@ -100,6 +100,43 @@ if (cosmetic.length === 0) {
     ),
   );
 }
+
+console.log('\n[6] managed sites scope network blocking');
+check(
+  'managed mode with no sites blocks nothing',
+  buildDynamicAdRules([], { managedOnly: true, managedSites: [] }).length === 0,
+);
+const managedRules = buildDynamicAdRules([], {
+  managedOnly: true,
+  managedSites: ['baidu.com'],
+});
+check(
+  'every rule is limited to managed initiators',
+  managedRules.length > 0 &&
+    managedRules.every(
+      (r) =>
+        JSON.stringify(r.condition.initiatorDomains) ===
+        JSON.stringify(['baidu.com']),
+    ),
+);
+check(
+  'site scoped rules outside the managed list are dropped',
+  !managedRules.some((r) =>
+    (r.condition.initiatorDomains as string[] | undefined)?.includes(
+      'wenxuecity.com',
+    ),
+  ),
+);
+check(
+  'rules stay global when managed mode is off',
+  buildDynamicAdRules([], { managedOnly: false, managedSites: ['baidu.com'] })
+    .slice(0, AD_DOMAINS.length)
+    .every((r) => !('initiatorDomains' in r.condition)),
+);
+
+console.log('\n[7] managed site input is normalized');
+check('strips protocol, path and www', normalizeHost('https://www.Baidu.com/s?wd=1') === 'baidu.com');
+check('keeps subdomains', normalizeHost('m.baidu.com') === 'm.baidu.com');
 
 console.log(failures === 0 ? '\nALL PASS\n' : `\n${failures} FAILURE(S)\n`);
 process.exit(failures === 0 ? 0 : 1);

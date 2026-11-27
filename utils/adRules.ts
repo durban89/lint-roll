@@ -1,5 +1,5 @@
 import type { Browser } from 'wxt/browser';
-import { SITE_RULES } from '@/utils/siteRules';
+import { SITE_RULES, hostMatches } from '@/utils/siteRules';
 
 type ResourceType = `${Browser.declarativeNetRequest.ResourceType}`;
 
@@ -132,6 +132,14 @@ function sanitizeDomains(domains: string[]): string[] {
   return [...seen];
 }
 
+/** Options for scoping the network rules to managed sites. */
+export interface RuleScopeOptions {
+  /** Domains the extension is allowed to run on. */
+  managedSites?: string[];
+  /** When true, blocking only applies to requests initiated by managed sites. */
+  managedOnly?: boolean;
+}
+
 /**
  * Build the dynamic declarativeNetRequest rules, skipping requests initiated
  * from allowlisted domains. Dynamic rules are persisted in the browser profile
@@ -140,7 +148,13 @@ function sanitizeDomains(domains: string[]): string[] {
  */
 export function buildDynamicAdRules(
   allowlist: string[] = [],
+  options: RuleScopeOptions = {},
 ): Browser.declarativeNetRequest.Rule[] {
+  const managedOnly = options.managedOnly ?? false;
+  const managedSites = sanitizeDomains(options.managedSites ?? []);
+  // Managed mode with an empty list means the extension does nothing.
+  if (managedOnly && managedSites.length === 0) return [];
+
   const excludedInitiatorDomains = sanitizeDomains([
     ...allowlist,
     // Sites that opted out of network blocking keep their ads loadable and
@@ -150,6 +164,8 @@ export function buildDynamicAdRules(
   const excluded = excludedInitiatorDomains.length > 0
     ? { excludedInitiatorDomains }
     : {};
+  // Managed mode narrows every rule to requests coming from a managed site.
+  const scope = managedOnly ? { initiatorDomains: managedSites } : {};
 
   const globalRules: Browser.declarativeNetRequest.Rule[] = AD_DOMAINS.map(
     (domain, index) => ({
@@ -159,13 +175,23 @@ export function buildDynamicAdRules(
       condition: {
         urlFilter: `||${domain}`,
         resourceTypes: RESOURCE_TYPES,
+        ...scope,
         ...excluded,
       },
     }),
   );
 
+  const scopedEntries = managedOnly
+    ? SITE_SCOPED_DOMAINS.map((entry) => ({
+        domain: entry.domain,
+        hosts: entry.hosts.filter((host) =>
+          managedSites.some((site) => hostMatches(host, site)),
+        ),
+      })).filter((entry) => entry.hosts.length > 0)
+    : SITE_SCOPED_DOMAINS;
+
   const scopedRules: Browser.declarativeNetRequest.Rule[] =
-    SITE_SCOPED_DOMAINS.map((entry, index) => ({
+    scopedEntries.map((entry, index) => ({
       id: AD_DOMAINS.length + index + 1,
       priority: 1,
       action: { type: 'block' },

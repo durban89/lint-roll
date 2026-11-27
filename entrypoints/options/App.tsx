@@ -6,18 +6,24 @@ import {
   blockedBySite,
   blockedCount,
   enabled,
+  managedOnly,
+  managedSites,
   removeElements,
   resetStats,
 } from '@/utils/settings';
-import { SITE_RULES } from '@/utils/siteRules';
+import { SITE_RULES, normalizeHost } from '@/utils/siteRules';
 
 function App() {
   const [isEnabled, setIsEnabled] = useStorageItem(enabled);
   const [removes, setRemoves] = useStorageItem(removeElements);
   const [list, setList] = useStorageItem(allowlist);
+  const [onlyManaged, setOnlyManaged] = useStorageItem(managedOnly);
+  const [sites, setSites] = useStorageItem(managedSites);
   const [count] = useStorageItem(blockedCount);
   const [perSite] = useStorageItem(blockedBySite);
   const [draft, setDraft] = useState('');
+  const [siteDraft, setSiteDraft] = useState('');
+  const version = browser.runtime.getManifest().version;
 
   function normalize(value: string): string {
     return value
@@ -41,6 +47,20 @@ function App() {
     await setList((list ?? []).filter((item) => item !== domain));
   }
 
+  async function addManagedSite() {
+    const site = normalizeHost(siteDraft);
+    if (!site) return;
+    const current = sites ?? [];
+    if (!current.includes(site)) {
+      await setSites([...current, site]);
+    }
+    setSiteDraft('');
+  }
+
+  async function removeManagedSite(site: string) {
+    await setSites((sites ?? []).filter((item) => item !== site));
+  }
+
   const topSites = Object.entries(perSite ?? {})
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8);
@@ -51,7 +71,12 @@ function App() {
         <header className="flex items-center gap-3">
           <img src="/icon/128.png" alt="" className="h-10 w-10" />
           <div>
-            <h1 className="text-lg font-semibold">LintRoll Settings</h1>
+            <h1 className="text-lg font-semibold">
+              LintRoll Settings{' '}
+              <span className="text-xs font-normal text-slate-500">
+                v{version}
+              </span>
+            </h1>
             <p className="text-sm text-slate-400">
               Detect and remove page ads for a cleaner browsing experience.
             </p>
@@ -83,6 +108,71 @@ function App() {
               />
             </label>
           </div>
+        </section>
+
+        <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">
+          <h2 className="mb-1 text-sm font-semibold text-slate-300">
+            Managed Sites
+          </h2>
+          <p className="mb-4 text-xs text-slate-500">
+            When enabled, LintRoll only runs on the sites listed below and
+            their subdomains. Every other site is left untouched.
+          </p>
+          <label className="mb-4 flex items-center justify-between text-sm">
+            <span>
+              Only run on managed sites
+              <span className="block text-xs text-slate-500">
+                When off, ads are blocked on every site
+              </span>
+            </span>
+            <Toggle
+              aria-label="Only run on managed sites"
+              checked={onlyManaged ?? true}
+              onChange={(value) => void setOnlyManaged(value)}
+            />
+          </label>
+          <div className="flex gap-2">
+            <input
+              value={siteDraft}
+              onChange={(event) => setSiteDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') void addManagedSite();
+              }}
+              placeholder="baidu.com"
+              className="flex-1 rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm outline-none placeholder:text-slate-600 focus:border-emerald-500"
+            />
+            <button
+              type="button"
+              onClick={() => void addManagedSite()}
+              className="rounded-lg bg-emerald-500 px-4 py-2 text-sm font-medium text-slate-950 transition hover:bg-emerald-400"
+            >
+              Add
+            </button>
+          </div>
+          <ul className="mt-4 flex flex-col gap-2">
+            {(sites ?? []).length === 0 ? (
+              <li className="text-xs text-slate-500">
+                No managed sites yet - the extension does nothing while
+                "Only run on managed sites" is on
+              </li>
+            ) : (
+              (sites ?? []).map((site) => (
+                <li
+                  key={site}
+                  className="flex items-center justify-between rounded-lg border border-slate-800 bg-slate-950 px-3 py-2 text-sm"
+                >
+                  <span>{site}</span>
+                  <button
+                    type="button"
+                    onClick={() => void removeManagedSite(site)}
+                    className="text-xs text-slate-400 transition hover:text-rose-400"
+                  >
+                    Remove
+                  </button>
+                </li>
+              ))
+            )}
+          </ul>
         </section>
 
         <section className="rounded-2xl border border-slate-800 bg-slate-900/50 p-5">

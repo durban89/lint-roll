@@ -4,6 +4,8 @@ import {
   blockedCount,
   enabled,
   incrementBlocked,
+  managedOnly,
+  managedSites,
 } from '@/utils/settings';
 
 /**
@@ -14,13 +16,20 @@ import {
  */
 async function syncDynamicRules(): Promise<void> {
   try {
-    const [active, domains] = await Promise.all([
+    const [active, domains, onlyManaged, managed] = await Promise.all([
       enabled.getValue(),
       allowlist.getValue(),
+      managedOnly.getValue(),
+      managedSites.getValue(),
     ]);
     await browser.declarativeNetRequest.updateDynamicRules({
       removeRuleIds: dynamicAdRuleIds,
-      addRules: (active ?? true) ? buildDynamicAdRules(domains ?? []) : [],
+      addRules: (active ?? true)
+        ? buildDynamicAdRules(domains ?? [], {
+            managedOnly: onlyManaged ?? true,
+            managedSites: managed ?? [],
+          })
+        : [],
     });
   } catch (error) {
     console.error('[LintRoll] Failed to sync dynamic rules', error);
@@ -57,6 +66,14 @@ export default defineBackground(() => {
   });
 
   allowlist.watch(() => {
+    void syncDynamicRules();
+  });
+
+  managedOnly.watch(() => {
+    void syncDynamicRules();
+  });
+
+  managedSites.watch(() => {
     void syncDynamicRules();
   });
 
